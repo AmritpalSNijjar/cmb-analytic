@@ -91,7 +91,6 @@ class analytic_CMB:
         
         return val
 
-
     def Phi_ak(self, a, k):
         """
         Equation (A-17a) in https://arxiv.org/abs/astro-ph/9407093
