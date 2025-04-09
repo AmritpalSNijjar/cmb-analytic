@@ -54,10 +54,11 @@ class TheoCamb:
         return 1/(a*np.sqrt(a+1))
 
     def A(self, k):
-        return np.sqrt(As*(k**(n-1))((k_eq/k)**4)((6/(5+2*f_nu))**2))
+        #return np.sqrt(self.As*(k**(n-1))((k_eq/k)**4)((6/(5+2*self.f_nu))**2))
+        return np.sqrt((self.As*k)*((self.k_eq/k)**4)*((6/(5+2*self.f_nu))**2))
 
-    def Delta_T(self, a):
-        return (1 + (2 * f_nu * (1 - (0.333*a/(a+1))))/5) * self.A(k) * self.ug(a)
+    def Delta_T(self, a, k):
+        return (1 + (2 * self.f_nu * (1 - (0.333*a/(a+1))))/5) * self.A(k) * self.ug(a)
 
     def N_2(a, k):
         Nitem1 = -((20*a + 19)*self.A(k)*self.ug(a))/(10*(3*a + 4))
@@ -67,10 +68,10 @@ class TheoCamb:
 
     def Phi(self, a, k):
         #Implement G potential
-        return (3/4)*((k_eq/k)**2)*((a + 1)/a**2)*self.Delta_T(a)
+        return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*self.Delta_T(a)
 
     def Psi(self, a, k):
         #Implement G potential
-        return (3/4)*((k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a) + (8*f_nu*self.N_2(a, k))/(5*(a+1)))
+        return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1)))
 """    
 
