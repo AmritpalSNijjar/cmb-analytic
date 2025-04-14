@@ -12,7 +12,7 @@ from scipy.integrate import quad
 
 class TheoCamb:
     def __init__(self, ombh2, omch2, H0, As):
-        self.aeq    = 1/3400
+        self.a_eq   = 1/3400
         self.ombh2  = ombh2
         self.omch2  = omch2
         self.H0     = H0
@@ -22,10 +22,11 @@ class TheoCamb:
         self.a0     = 1
         self.omb    = self.ombh2/self.h**2
         self.omm    = (self.ombh2 + self.omch2)/ self.h**2
-        self.omr    = self.aeq * self.omm
+        self.omr    = self.a_eq * self.omm
         self.omlamb = 1 - self.omm - self.omr
         self.omlh2  = (self.h)**2 - self.ombh2 - self.omch2
         self.k_eq   = np.sqrt(2 * self.omm * self.a0) * self.H0
+        self.R_eq   = self.R(self.a_eq)
         self.a      = np.arange(1e-5,1+0.9e-7,1e-7) #can change steps
 
     def H(self):
@@ -76,7 +77,13 @@ class TheoCamb:
         return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a, k) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1)))  
 
     def R(self, a):
-        return (3 * self.omb * a)/((1-self.f_nu) * 4 * self.omm)
+        return (3 * self.omb * a)/((1 - self.f_nu) * 4 * self.omm)
+
+    def R_dot(self, a):
+        return self.k_eq * self.R_eq * np.sqrt((1 + a)/2)
+
+    def R_ddot(self, a):
+        return ((self.k_eq**2) * self.R_eq)/4
 
     def c_s(self, a):
         return np.sqrt(1/(3 * (1 + self.R)))
