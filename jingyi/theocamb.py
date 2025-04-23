@@ -29,17 +29,17 @@ class TheoCamb:
         self.R_eq   = self.R(self.a_eq)
         self.a      = np.arange(1e-5,1+0.9e-7,1e-7) #can change steps
 
-    def H(self):
-        self.H = self.H0 * np.sqrt(self.omr * self.a**(-4) + self.omm * self.a**(-3) + self.omlamb)
+    def H(self, a):
+        self.H = self.H0 * np.sqrt(self.omr * (a**(-4)) + self.omm * (a**(-3)) + self.omlamb)
         #return self.H
          #Implement Hubble parameter
 
-    def etaintegrate(self,a):
+    def etaintegral(self, a):
         H = self.H0 * np.sqrt(self.omr * a**(-4) + self.omm * a**(-3) + self.omlamb)
         return 1/(H*(a**2))
 
     def eta(self, a0):
-        return quad(self.etaintegrate, 0, a0)[0] 
+        return quad(self.etaintegral, 0, a0)[0] 
          #Implement how to integrate to get comformal time
 
     def listeta(self):
@@ -48,6 +48,17 @@ class TheoCamb:
            itemeta = self.eta(a_val)
            eta.append(itemeta)
         return np.array(eta)
+
+#    def get_ks(self, k_lower = 1e-5, k_upper = 1, n_ks = 1e5, point_spacing = "log"):
+        """
+        Function for generating an array of k mode points to be used.
+        """
+    
+#        if point_spacing == "lin":
+#            return np.linspace(start = a_lower, stop = a_upper, num = n_as)
+#        else: # log spaced a values
+#            return np.geomspace(start = a_lower, stop = a_upper, num = n_as)():
+
 
     def ug(self, a):
         return (a**3 + 2*a**2/9 - 8*a/9 - 16/9 + 16*np.sqrt(a+1)/9)/(a*(a+1))
@@ -86,5 +97,48 @@ class TheoCamb:
         return ((self.k_eq**2) * self.R_eq)/4
 
     def c_s(self, a):
-        return np.sqrt(1/(3 * (1 + self.R)))
+        return np.sqrt(1/(3 * (1 + self.R(a))))
+
+    def rs_intergral(self, a):
+        # Eq 7
+        rs_intergral = self.c_s(a) * self.etaintegrate(a)
+        return rs_intergral
+
+    def r_s(self, a0):
+        # Eq 7
+        rs_result = quad(self.rs_intergral, 0, a0)[0] 
+
+        return rs_result 
+
+    def J_eta(self, a, k):
+        # Eq D-2
+        J_result = (np.sqrt(3) * self.R_dot(a))/(4 * k * np.sqrt(1 + self.R(a)))
+
+        return J_result
+
+    def G_eta(self, a, k):
+        # Eq D-4
+        G_part1 = (1 + self.R(a))**(-1/4)
+        G_part2 = 1 - ((1 + self.R(a))* self.Psi(a, k))/self.Phi(a, k)
+        G_part3 = (3 * self.R_ddot(a))/(4 * (k**2)) - self.J_eta(a, k)**2
+
+        G_result = G_part1 * (G_part2 + G_part3)
+
+        return G_result
+
+    def I_eta(self, a0, k):
+        # Eq D-3
+        
+        I_integrate = lambda a:self.etaintegrate(a) * self.G_eta(a, k) * self.Phi(a, k) * np.sin(k * self.r_s(a0) - k * self.r_s(a))
+
+        I_part1 = k/np.sqrt(3)
+        I_part2 = quad(I_integrate, 0, a0)[0]
+
+        I_result = I_part1 * I_part2
+
+        return I_result
+
+        
+
+
 
