@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.integrate import quad
+from scipy.integrate import simpson
 
 class analytic_CMB:
 
@@ -204,6 +205,41 @@ class analytic_CMB:
         val = (1/(1-self.f_nu))(3/4)*(self.ombh2/self.om0h2)*a_rescale
         return val
 
+    def Rdot_a(self, a):
+        """
+        Equation (D-8b) in https://arxiv.org/abs/astro-ph/9407093
+        """
+
+        a_rescale = a/self.a_eq 
+
+        R_eq = R_a(self.a_eq) # NOTE: Input is a_scaled to today as we have currently implemented things.
+
+        val = self.k_eq*np.sqrt(1 + a_rescale)*R_eq/np.sqrt(2)
+
+        return val
+
+    def Rddot_a(self):
+        """
+        Equation (D-8c) in https://arxiv.org/abs/astro-ph/9407093
+        """
+        
+        # Note: This is a constant.
+
+        val = (self.k_eq**2)*(self.R_eq)/4
+        
+        return val
+
+    def J_ak(self, a, k):
+        """
+        Equation (D-2) in https://arxiv.org/abs/astro-ph/9407093
+        """
+
+        a_rescale = a/self.a_eq
+
+        val = (np.sqrt(3)/(4*k))*(self.Rdot_a(a)/np.sqrt(1+self.R_a(a)))
+
+        return val
+        
     def cs_a(self, a):
         """
         Equation (D-6) in https://arxiv.org/abs/astro-ph/9407093
@@ -212,6 +248,14 @@ class analytic_CMB:
         R = self.R_a(a) # NOTE: Input is a_scaled to today as we have currently implemented things.
         
         val = np.sqrt((1/3)*(1/(1+R)))
+        
+        return val
+
+    def rs_a(self, a):
+        """
+        Equation (7) in https://arxiv.org/abs/astro-ph/9407093
+        """
+        val = 0
         
         return val
       
@@ -223,6 +267,21 @@ class analytic_CMB:
         rhs = self.As*k**(self.ns-1) # Right Hand Side of the equation
         val = np.sqrt(rhs/(k**3))
         
+        return val
+
+    def I_etak(self, eta_ind, k_ind, Phi, G, rs):
+        """
+        Equation (D3) in https://arxiv.org/abs/astro-ph/9407093
+        """
+
+        k = self.ks[k_ind]
+        
+        integrand = Phi[:eta_ind + 1, k_ind]*G[:eta_ind + 1, k_ind]*np.sin(k*rs[eta_ind] - k*rs[:eta_ind + 1])
+        
+        integral_term = simpson(integrand, self.etas[:eta_ind + 1])
+        
+        val = k/np.sqrt(3)
+
         return val
     
     def compute_Cls(self):
@@ -246,7 +305,34 @@ class analytic_CMB:
         for k_ind, k in enumerate(self.ks):
             Phi[0, k_ind] = Phi_0k(k)
             Psi[0, k_ind] = -0.86*Phi[0, k_ind] # Using the relation in Eqn. A-19
-          
+
+        # Construct Array for G(eta, k)
+        
+        G = np.zeros((self.n_as, self.n_ks))
+        
+        for a_ind, a in enumerate(self.as):
+            for k_ind, k in enumerate(self.ks):
+                # The a's inputed are NOT rescaled, the rescaling happens within the functions
+
+                R = self.R_a(a)
+
+                Rddot = self.Rddot_a()
+
+                J = self.J_ak(a, k)
+                
+                G[a_ind, k_ind] = ((1+R)**(-0.25))*(1 - (1 + R)*(Phi[a_ind, k_ind]/Psi[a_ind, k_ind]) + (3/(4*k**2))*Rddot - J**2)
+
+        # Construct Array for r_s(eta)
+
+        cs = np.zeros(self.n_as)
+        rs = np.zeros(self.n_as)
+        
+        for a_ind, a in enumerate(self.as):
+            
+            cs[a_ind] = self.cs_a(a)
+            rs[a_ind] = simpson(np.concatenate((np.array([1/3]), cs[:a_ind + 1])), np.concatenate((np.array([0]), self.etas[:a_ind + 1])))
+
+        
         return ells, cls
 
 
