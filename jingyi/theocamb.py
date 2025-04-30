@@ -8,7 +8,7 @@ from scipy.stats import multivariate_normal
 import itertools
 import scipy.integrate as integrate
 from scipy.integrate import quad
-
+from tqdm import tqdm
 
 class TheoCamb:
     def __init__(self, ombh2, omch2, H0, As):
@@ -20,18 +20,26 @@ class TheoCamb:
         self.As     = As
         self.f_nu   = 0.405
         self.a0     = 1
+
         self.omb    = self.ombh2/self.h**2
-        self.omm    = (self.ombh2 + self.omch2)/ self.h**2
-        self.omr    = self.a_eq * self.omm
+        self.omm    = (self.ombh2 + self.omch2)/ self.h**2 #Omega_0
+        self.omr    = self.a_eq * self.omm * 3400
         self.omlamb = 1 - self.omm - self.omr
         self.omlh2  = (self.h)**2 - self.ombh2 - self.omch2
-        self.k_eq   = np.sqrt(2 * self.omm * self.a0) * self.H0
-        self.R_eq   = self.R(self.a_eq)
-        self.a      = np.arange(1e-5,1+0.9e-7,1e-7) #can change steps
+
+        #self.k_eq   = np.sqrt(2 * self.omm * self.a0 * 3400) * self.H0
+        self.k_eq   = 0.073*(self.ombh2 + self.omch2)
+        self.R_eq   = self.R(self.a_eq * 3400)
+        self.a_step = 1e-7
+        self.a      = np.arange(1e-5,1+0.9e-7,self.a_step) #can change steps
+
+    def a_adjusted(self):
+        a_adjust = self.a/self.a_eq
+        return a_adjust
 
     def H(self, a):
         self.H = self.H0 * np.sqrt(self.omr * (a**(-4)) + self.omm * (a**(-3)) + self.omlamb)
-        #return self.H
+        return self.H
          #Implement Hubble parameter
 
     def etaintegral(self, a):
@@ -43,10 +51,14 @@ class TheoCamb:
          #Implement how to integrate to get comformal time
 
     def listeta(self):
-        eta = []
-        for a_val in self.a:
-           itemeta = self.eta(a_val)
-           eta.append(itemeta)
+        eta = [0]
+        n   = 0
+        for a_val in tqdm(self.a, desc="Calculating eta(a)"):
+            itemeta_plus = quad(self.etaintegral, a_val-self.a_step, a_val)[0]
+            itemeta      = eta[n]+itemeta_plus
+            eta.append(itemeta)
+            n+=1
+        eta = eta[1:]
         return np.array(eta)
 
 #    def get_ks(self, k_lower = 1e-5, k_upper = 1, n_ks = 1e5, point_spacing = "log"):
@@ -79,13 +91,44 @@ class TheoCamb:
         Nitem3 = (8*self.A(k)*np.log((3*a + 4)/4))/9
         return Nitem1 + Nitem2 + Nitem3
  
-    def Phi(self, a, k):
+    def Phi_bar(self, a, k):
         #Implement G potential
         return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*self.Delta_T(a, k)
 
-    def Psi(self, a, k):
+    def Psi_bar(self, a, k):
         #Implement G potential
-        return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a, k) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1)))  
+        return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a, k) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1))) 
+
+    def q(self, k): 
+        # comment below Eq A-21
+        q = k/(self.omm * (self.h**2) * np.exp(-2 * self.omb))
+        return q
+
+    def T_k(self, k):
+        # Eq A-21
+        T_q     = self.q(k)
+        T_item1 = (np.log(1 + 2.34 * T_q))/(2.34 * T_q)
+        T_item2 = 1 + 3.89 * T_q + (1.41 * T_q)**2 + (5.46 * T_q)**3 + (6.71 * T_q)**4
+        T_k     = T_item1 * (T_item2**(-1/4))
+        return T_k
+
+    def Phi(self, a, k):
+        #Eq A-22
+        alpha_1   = 0.11
+        beta      = 1.6
+        Phi_T     = self.T_k(k)
+        Phi_item  = (1 - Phi_T)*np.exp(-alpha_1 * ((a * k/self.k_eq)**beta)) + Phi_T
+        Phi       = self.Phi_bar(a, k) * Phi_item
+        return Phi
+
+    def Psi(self, a, k):
+        #Eq A-22
+        alpha_2   = 0.097
+        beta      = 1.6
+        Psi_T     = self.T_k(k)
+        Psi_item  = (1 - Psi_T)*np.exp(-alpha_2 * ((a * k/self.k_eq)**beta)) + Psi_T
+        Psi       = self.Psi_bar(a, k) * Psi_item
+        return Psi
 
     def R(self, a):
         return (3 * self.omb * a)/((1 - self.f_nu) * 4 * self.omm)
