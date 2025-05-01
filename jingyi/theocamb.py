@@ -27,7 +27,7 @@ class TheoCamb:
 
         self.omb    = self.ombh2/self.h**2
         self.omm    = (self.ombh2 + self.omch2)/ self.h**2 #Omega_0
-        self.omr    = self.omm #* (self.a_eq/self.a_eq) which equal to 1 
+        self.omr    = self.omm * self.a_eq#/self.a_eq) which equal to 1 
         self.omlamb = 1 - self.omm - self.omr
         self.omlh2  = (self.h)**2 - self.ombh2 - self.omch2
         
@@ -77,11 +77,12 @@ class TheoCamb:
          #Implement how to integrate to get comformal time
 
     def listeta(self):
+        #eta = [quad(self.etaintegral, 0, self.a[0])[0]]
         eta = [0]
         n   = 0
         for i in tqdm(range(len(self.a)-1), desc="Calculating eta(a)"):
             itemeta_plus = quad(self.etaintegral, self.a[i], self.a[i+1])[0]
-            itemeta      = eta[n]+itemeta_plus
+            itemeta      = eta[i]+itemeta_plus
             eta.append(itemeta)
         return np.array(eta)
 
@@ -121,7 +122,7 @@ class TheoCamb:
 
     def Psi_bar(self, a, k):
         #Implement G potential
-        return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a, k) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1)))
+        return -(3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a, k) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1)))
 
     def T_k(self, k):
         # Eq A-21
@@ -207,6 +208,15 @@ class TheoCamb:
         Theta_0_right1 = np.cos(k)*r_s + J0*np.sin(k)*r_s
         #Theta_0_right2 = 
         #return 
+
+
+
+
+
+
+
+
+        
 
 
 
