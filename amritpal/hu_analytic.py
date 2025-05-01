@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.integrate import quad
 from scipy.integrate import simpson
+from scipy.integrate import cumulative_simpson
 
 class analytic_CMB:
 
@@ -23,34 +24,43 @@ class analytic_CMB:
         self.omLh2 = self.h**2 - self.om0h2 - self.omrh2 
 
         self.f_nu  = 0.405
-        #self.k_eq  = np.sqrt(2*(self.om0h2/self.h**2)*(self.H0**2)/self.a_eq) #HU
-        self.k_eq = 0.073*self.om0h2
+        #self.k_eq  = np.sqrt(2*(self.om0h2/self.h**2)*(self.H0**2)/self.a_eq) # HU/S
+        self.k_eq = 0.073*self.om0h2 # dodelson 7.39, also in HU/S in the paragraph right after Eqn. D9
 
         #TODO: a_*, eta_*, but not as actual values. we need the closes value of a in self.a_s to serve
         #      as an approximate a_*, similarly the closes value of eta in self.etas for eta_*
 
         # Setting scale factor values and k mode values
 
-        self.n_as    = int(1e3) # TODO: allow for tuning of these parameters
-        self.a_lower = 1e-5
+        self.n_as    = int(2e3) # TODO: allow for tuning of these parameters
+        self.a_lower = 1e-6
         self.a_upper = 1
         
         self.n_ks    = int(1e3)
-        self.k_lower = 1e-4
+        self.k_lower = 1e-3
         self.k_upper = 1
 
         z_star    = 1000*(self.ombh2/self.h**2)**(-0.027/(1+0.11*np.log(self.ombh2/self.h**2))) # C2
         self.a_star = 1/(1 + z_star)
 
-        as_1   = self.get_scales(a_lower = self.a_lower, a_upper = self.a_star, n_as = self.n_as//2, point_spacing = "log", endpoint = False) 
-        as_2   = self.get_scales(a_lower = self.a_star, a_upper = self.a_upper, n_as = self.n_as//2, point_spacing = "log")
+        as_1   = self.get_scales(a_lower = self.a_lower, a_upper = 1e-3, n_as = self.n_as//2, point_spacing = "log", endpoint = False) 
+        as_2   = self.get_scales(a_lower = 1e-3, a_upper = self.a_upper, n_as = self.n_as//2, point_spacing = "log")
 
 
         self.a_s = np.concatenate((as_1, as_2))
+
+        #self.a_s = self.get_scales(a_lower = self.a_lower, a_upper = self.a_upper, n_as = self.n_as, point_spacing = "log")
         self.a_s_rescaled = self.a_s/self.a_eq
         
         self.ks   = self.get_ks(k_lower = self.k_lower, k_upper = self.k_upper, n_ks = self.n_ks, point_spacing = "lin")
-        self.etas = np.array([self.eta(a) for a in range(self.n_as)])
+
+        self.etas = np.zeros_like(self.a_s)
+        
+        #if not the next line... errors when integrating!
+        self.etas[0] = 0
+        
+        for i in range(1, self.n_as):
+            self.etas[i] = self.etas[i - 1] + self.eta(self.a_s[i - 1], self.a_s[i])
 
         self.recomb_ind = self.n_as//2
         self.eta_star = self.a_s[self.recomb_ind]
@@ -82,15 +92,15 @@ class analytic_CMB:
         Integrand for calculating conformal time eta of a given scale factor a_input: 1/(H*a_input^2).
         """
         
-        H = (self.H0)*np.sqrt((self.om0h2*a**-3 + self.omrh2*a**-4 + self.omLh2)/self.h**2)
-        return (H*a**2)**-1
+        H = (self.H0)*np.sqrt((self.om0h2/self.h**2)*a**-3 + (self.omrh2/self.h**2)*a**-4 + (self.omLh2/self.h**2))
+        return 1/(H*a**2)
 
-    def eta(self, a):
+    def eta(self, a_lower, a_upper):
         """
         Conformal time eta of a given scale factor a_input: The ingegral of da/(H*a^2) from 0 -> a_input.
         """
         # Lower bound set to very small number instead of zero.
-        return quad(self.eta_integrand, 1e-10, a)[0]
+        return quad(self.eta_integrand, a_lower, a_upper)[0]
 
     def UG_a(self, a):
         """
@@ -162,7 +172,7 @@ class analytic_CMB:
         Delta_T = self.Delta_T_ak(a, k) # NOTE: Input is a_scaled to today as we have currently implemented things.
         N2      = self.N2_ak(a, k, mode = "approximate") # NOTE: Input is a_scaled to today as we have currently implemented things.
         
-        val = (3/4)*((self.k_eq/k)**2)*((a_rescale + 1)/a_rescale**2)*(Delta_T + (8/5)*self.f_nu*N2/(a_rescale + 1))
+        val = -(3/4)*((self.k_eq/k)**2)*((a_rescale + 1)/a_rescale**2)*(Delta_T + (8/5)*self.f_nu*N2/(a_rescale + 1))
         return val
 
     def T_k(self, k):
@@ -275,7 +285,7 @@ class analytic_CMB:
         
         return val
       
-    def Phi_0k(self, k):
+    def Phi_0k(self, k): # Might not need this
         """
         Phi(0, k) found in Equation (A-20) in https://arxiv.org/abs/astro-ph/9407093
         """
@@ -296,31 +306,34 @@ class analytic_CMB:
         
         integral_term = simpson(integrand, self.etas[:eta_ind + 1])
         
-        val = k/np.sqrt(3)
+        factor = k/np.sqrt(3)
 
-        return val
+        return factor*integral_term
     
-    def compute_Cls(self):
+    def compute_Cls(self, inp_k):
 
         ells = 0 # dummy value for now
         cls  = 0 # dummy value for now
 
         # Construct Arrays for Potentials
 
-        Phi = np.zeros((self.n_as, self.n_ks))
-        Psi = np.zeros((self.n_as, self.n_ks))
+        self.Phi = np.zeros((self.n_as, self.n_ks))
+        self.Psi = np.zeros((self.n_as, self.n_ks))
         
         for a_ind, a in enumerate(self.a_s):
             for k_ind, k in enumerate(self.ks):
                 # The a's inputed are NOT rescaled, the rescaling happens within the functions
-                Phi[a_ind, k_ind] = self.Phi_ak(a, k) 
-                Psi[a_ind, k_ind] = self.Psi_ak(a, k)
+                self.Phi[a_ind, k_ind] = self.Phi_ak(a, k) 
+                self.Psi[a_ind, k_ind] = self.Psi_ak(a, k)
 
         # Use A19 to set the initial conditions Phi[0, k] and Psi[0, k]
+
+        #for a_ind, a in enunmerate(self.a_s):
+        # TODO: Vectorize this scaling instead of a for loop
         
-        for k_ind, k in enumerate(self.ks):
-            Phi[0, k_ind] = self.Phi_0k(k)
-            Psi[0, k_ind] = -0.86*Phi[0, k_ind] # Using the relation in Eqn. A-19
+        #self.Phi[a_ind, :] = self.Phi_0k(self.ks)*self.Phi[a_ind, :]/self.Phi[0, :]
+        # Using the relation in Eqn. A-19
+        #self.Psi[a_ind, :] = -0.86*self.Phi[0, k_ind]*self.Psi[a_ind, :]/self.Psi[0, :] # Using the relation in Eqn. A-19
 
         # Construct Array for G(eta, k)
         
@@ -336,20 +349,45 @@ class analytic_CMB:
 
                 J = self.J_ak(a, k)
                 
-                G[a_ind, k_ind] = ((1+R)**(-0.25))*(1 - (1 + R)*(Phi[a_ind, k_ind]/Psi[a_ind, k_ind]) + (3/(4*k**2))*Rddot - J**2)
+                G[a_ind, k_ind] = ((1+R)**(-0.25))*(1 - (1 + R)*(self.Psi[a_ind, k_ind]/self.Phi[a_ind, k_ind]) + (3/(4*k**2))*Rddot - J**2)
 
         # Construct Array for r_s(eta)
 
         cs = np.zeros(self.n_as)
         rs = np.zeros(self.n_as)
         
-        for a_ind, a in enumerate(self.a_s):
-            
-            cs[a_ind] = self.cs_a(a)
-            rs[a_ind] = simpson(np.concatenate((np.array([1/3]), cs[:a_ind + 1])), np.concatenate((np.array([0]), self.etas[:a_ind + 1])))
-
+        cs = self.cs_a(self.a_s)
+        cs[0] = np.sqrt(1/3)
         
-        return ells, cls
+        rs = np.concatenate(([0], cumulative_simpson(cs, x=self.etas)))
+
+        # fixed-k test
+        k_fixed_ind = inp_k
+        k_fixed = self.ks[k_fixed_ind]
+
+        I_k_fixed = np.zeros(self.n_as)
+
+        G_k_fixed = G[:, k_fixed_ind]
+
+        Phi_k_fixed = self.Phi[:, k_fixed_ind]
+        Psi_k_fixed = self.Phi[:, k_fixed_ind]
+
+        for a_ind, a in enumerate(self.a_s):
+
+            I_k_fixed[a_ind] = self.I_etak(a_ind, k_fixed_ind, self.Phi, G, rs)
+
+        out1 = np.zeros(self.n_as)
+        out2 = np.zeros(self.n_as)
+
+        theta_hat_naught_k_fixed = 0.43*self.Phi_bar_ak(self.a_s[0], k_fixed)
+
+        for a_ind, a in enumerate(self.a_s):
+            out1[a_ind] = (np.cos(k_fixed*rs[a_ind]) + self.J_ak(0, k_fixed)*np.sin(k_fixed*rs[a_ind]))*(theta_hat_naught_k_fixed+self.Phi_ak(self.a_s[0], k_fixed)) + I_k_fixed[a_ind]
+            out2[a_ind] = out1[a_ind] * (1+self.R_a(a))**(-0.25)
+
+            out2[a_ind] -= self.Phi[a_ind, k_fixed_ind]
+        
+        return out2
 
 
         
