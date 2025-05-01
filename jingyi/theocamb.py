@@ -12,9 +12,13 @@ from tqdm import tqdm
 
 class TheoCamb:
     def __init__(self, ombh2, omch2, H0, As):
-        self.a_eq   = 1/3400
         self.ombh2  = ombh2
         self.omch2  = omch2
+        self.ommh2  = self.ombh2 + self.omch2
+
+        self.a_eq   = 4.15e-5/self.ommh2 # change a from a=1/3400 to this
+        # Because a_eq in the paper is 1 while a defined here in from 1e-5 to 1, real a and a_eq used in the code below should be a/a_eq where a_eq is defined above
+
         self.H0     = H0
         self.h      = H0/100
         self.As     = As
@@ -23,23 +27,45 @@ class TheoCamb:
 
         self.omb    = self.ombh2/self.h**2
         self.omm    = (self.ombh2 + self.omch2)/ self.h**2 #Omega_0
-        self.omr    = self.a_eq * self.omm * 3400
+        self.omr    = self.omm #* (self.a_eq/self.a_eq) which equal to 1 
         self.omlamb = 1 - self.omm - self.omr
         self.omlh2  = (self.h)**2 - self.ombh2 - self.omch2
-
+        
         #self.k_eq   = np.sqrt(2 * self.omm * self.a0 * 3400) * self.H0
         self.k_eq   = 0.073*(self.ombh2 + self.omch2)
-        self.R_eq   = self.R(self.a_eq * 3400)
-        self.a_step = 1e-7
-        self.a      = np.arange(1e-5,1+0.9e-7,self.a_step) #can change steps
+        self.R_eq   = self.R(1) #self.R(self.a_eq * 3400) 
+        #R here is a function of a, R_eq = R(a_eq) = R(1)
+
+        #set a
+        #self.a_step = 1e-5
+        #self.a      = np.arange(1e-5,1+0.9e-7,self.a_step) #can change steps
+        self.n_as    = int(1e3)
+        self.a_lower = 1e-5
+        self.a_upper = 1
+
+        z_star       = 1000*(self.ombh2/self.h**2)**(-0.027/(1+0.11*np.log(self.ombh2/self.h**2))) # C2
+        self.a_star  = 1/(1 + z_star)
+
+        as_1         = self.get_scales(a_lower = self.a_lower, a_upper = self.a_star, n_as = self.n_as//2, point_spacing = "log", endpoint = False) 
+        as_2         = self.get_scales(a_lower = self.a_star, a_upper = self.a_upper, n_as = self.n_as//2, point_spacing = "log")
+        self.a     = np.concatenate((as_1, as_2))
+        
+    def get_scales(self, a_lower = 1e-5, a_upper = 1, n_as = 1e5, point_spacing = "log", endpoint = True):
+        """
+        Function for generating an array of scale factor points to be used.
+        """
+        if point_spacing == "lin":
+            return np.linspace(start = a_lower, stop = a_upper, num = int(n_as), endpoint = endpoint)
+        else: # log spaced a values
+            return np.geomspace(start = a_lower, stop = a_upper, num = int(n_as), endpoint = endpoint)
 
     def a_adjusted(self):
         a_adjust = self.a/self.a_eq
         return a_adjust
 
     def H(self, a):
-        self.H = self.H0 * np.sqrt(self.omr * (a**(-4)) + self.omm * (a**(-3)) + self.omlamb)
-        return self.H
+        H = self.H0 * np.sqrt(self.omr * (a**(-4)) + self.omm * (a**(-3)) + self.omlamb)
+        return H
          #Implement Hubble parameter
 
     def etaintegral(self, a):
@@ -53,12 +79,10 @@ class TheoCamb:
     def listeta(self):
         eta = [0]
         n   = 0
-        for a_val in tqdm(self.a, desc="Calculating eta(a)"):
-            itemeta_plus = quad(self.etaintegral, a_val-self.a_step, a_val)[0]
+        for i in tqdm(range(len(self.a)-1), desc="Calculating eta(a)"):
+            itemeta_plus = quad(self.etaintegral, self.a[i], self.a[i+1])[0]
             itemeta      = eta[n]+itemeta_plus
             eta.append(itemeta)
-            n+=1
-        eta = eta[1:]
         return np.array(eta)
 
 #    def get_ks(self, k_lower = 1e-5, k_upper = 1, n_ks = 1e5, point_spacing = "log"):
@@ -80,7 +104,7 @@ class TheoCamb:
 
     def A(self, k):
         #return np.sqrt(self.As*(k**(n-1))((k_eq/k)**4)((6/(5+2*self.f_nu))**2))
-        return np.sqrt(self.As*((self.k_eq/k)**4)*((6/(5+2*self.f_nu))**2))
+        return np.sqrt(self.As*((k/self.k_eq)**4)*((6/(5+2*self.f_nu))**2)*(k**(-3)))
 
     def Delta_T(self, a, k):
         return (1 + (2 * self.f_nu * (1 - (0.333*a/(a+1))))/5) * self.A(k) * self.ug(a)
@@ -97,18 +121,13 @@ class TheoCamb:
 
     def Psi_bar(self, a, k):
         #Implement G potential
-        return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a, k) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1))) 
-
-    def q(self, k): 
-        # comment below Eq A-21
-        q = k/(self.omm * (self.h**2) * np.exp(-2 * self.omb))
-        return q
+        return (3/4)*((self.k_eq/k)**2)*((a + 1)/a**2)*(self.Delta_T(a, k) + (8*self.f_nu*self.N_2(a, k))/(5*(a+1)))
 
     def T_k(self, k):
         # Eq A-21
-        T_q     = self.q(k)
-        T_item1 = (np.log(1 + 2.34 * T_q))/(2.34 * T_q)
-        T_item2 = 1 + 3.89 * T_q + (1.41 * T_q)**2 + (5.46 * T_q)**3 + (6.71 * T_q)**4
+        q       = k/(self.omm * (self.h**2) * np.exp(-2 * self.omb))
+        T_item1 = (np.log(1 + 2.34 * q))/(2.34 * q)
+        T_item2 = 1 + 3.89 * q + (16.1 * q)**2 + (5.46 * q)**3 + (6.71 * q)**4
         T_k     = T_item1 * (T_item2**(-1/4))
         return T_k
 
@@ -181,7 +200,13 @@ class TheoCamb:
 
         return I_result
 
-        
+    def Theta_0_hat(self):
+        # Eq D-1
+        r_s = self.r_s(a0)
+        J0  = self.J_eta(0)
+        Theta_0_right1 = np.cos(k)*r_s + J0*np.sin(k)*r_s
+        #Theta_0_right2 = 
+        #return 
 
 
 
