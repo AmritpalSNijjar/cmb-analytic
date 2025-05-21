@@ -5,23 +5,34 @@ from scipy.integrate import cumulative_simpson
 
 class analytic_CMB:
 
-    def __init__(self, ombh2, omch2, H0, As, ns, tau):
+    def __init__(self, ombh2, omch2, H0, As, ns, tau, noL_CDM = False):
 
         # LCDM parameters
         self.ombh2 = ombh2
-        self.omch2 = omch2
         self.H0    = H0
         self.As    = As
         self.ns    = ns
         self.tau   = tau
-
-        self.h     = H0/100
-        self.om0h2 = self.ombh2 + self.omch2
-
-        self.a_eq  = 4.15e-5/self.om0h2 # Dodelson Eq. (2.87)
         
-        self.omrh2 = self.a_eq * (self.om0h2/self.h**2)        
-        self.omLh2 = self.h**2 - self.om0h2 - self.omrh2 
+        self.h     = H0/100
+        
+        if noL_CDM:
+            self.om0h2 = self.h**2
+            self.a_eq  = 4.15e-5/self.om0h2 # Dodelson Eq. (2.87)
+            self.omrh2 = self.a_eq * (self.om0h2/self.h**2)
+            self.omch2 = self.h**2 - self.ombh2 - self.omrh2
+            self.omLh2 = 0
+        else:
+            self.omch2 = omch2
+            self.om0h2 = self.ombh2 + self.omch2
+            
+            self.a_eq  = 4.15e-5/self.om0h2
+            self.omrh2 = self.a_eq * (self.om0h2/self.h**2)
+            
+            self.omLh2 = self.h**2 - self.om0h2 - self.omrh2 
+
+        
+        
 
         self.f_nu  = 0.405
         #self.k_eq  = np.sqrt(2*(self.om0h2/self.h**2)*(self.H0**2)/self.a_eq) # HU/S
@@ -133,6 +144,10 @@ class analytic_CMB:
             val = -(1/10)*((20*a_rescale+19)/(3*a_rescale+4))*A*UG - (8/3)*(a_rescale/(3*a_rescale+4))*A + (8/9)*np.log((3*a_rescale+4)/4)*A
         elif mode == "exact":
             val = 0 # In case we want to allow for Equation (A-11) to be used instead in the future.
+
+        H = (self.H0)*np.sqrt((self.om0h2/self.h**2)*a**-3 + (self.omrh2/self.h**2)*a**-4 + (self.omLh2/self.h**2))
+        
+        val *= np.cos((0.5*k)/(a*H))
 
         return val
 
@@ -281,7 +296,11 @@ class analytic_CMB:
         """
         Equation (7) in https://arxiv.org/abs/astro-ph/9407093
         """
-        val = 0
+    
+        R_eq = self.R_a(self.a_eq)
+        R = self.R_a(a)
+        
+        val = (2/3) * np.sqrt(6/R_eq) * np.log((np.sqrt(1+R)+np.sqrt(R+R_eq))/(1+np.sqrt(R_eq))) * (1/self.k_eq)
         
         return val
       
@@ -295,14 +314,14 @@ class analytic_CMB:
         
         return val
 
-    def I_etak(self, eta_ind, k_ind, Phi, G, rs):
+    def I_etak(self, eta_ind, k_ind, Phi, G):
         """
         Equation (D3) in https://arxiv.org/abs/astro-ph/9407093
         """
 
         k = self.ks[k_ind]
         
-        integrand = Phi[:eta_ind + 1, k_ind]*G[:eta_ind + 1, k_ind]*np.sin(k*rs[eta_ind] - k*rs[:eta_ind + 1])
+        integrand = Phi[:eta_ind + 1, k_ind]*G[:eta_ind + 1, k_ind]*np.sin(k*self.rs_a(self.a_s[eta_ind]) - k*self.rs_a(self.a_s[:eta_ind + 1]))
         
         integral_term = simpson(integrand, self.etas[:eta_ind + 1])
         
@@ -340,12 +359,12 @@ class analytic_CMB:
         G = np.zeros((self.n_as, self.n_ks))
         
         for a_ind, a in enumerate(self.a_s):
+            
+            R = self.R_a(a)
+            Rddot = self.Rddot_a()
+            
             for k_ind, k in enumerate(self.ks):
                 # The a's inputed are NOT rescaled, the rescaling happens within the functions
-
-                R = self.R_a(a)
-
-                Rddot = self.Rddot_a()
 
                 J = self.J_ak(a, k)
                 
@@ -357,9 +376,11 @@ class analytic_CMB:
         rs = np.zeros(self.n_as)
         
         cs = self.cs_a(self.a_s)
+        rs = self.rs_a(self.a_s)
         cs[0] = np.sqrt(1/3)
-        
-        rs = np.concatenate(([0], cumulative_simpson(cs, x=self.etas)))
+        rs[0] = 0
+        #rs = np.concatenate(([0], cumulative_simpson(cs, x=self.etas)))
+
 
         # fixed-k test
         k_fixed_ind = inp_k
@@ -370,24 +391,34 @@ class analytic_CMB:
         G_k_fixed = G[:, k_fixed_ind]
 
         Phi_k_fixed = self.Phi[:, k_fixed_ind]
-        Psi_k_fixed = self.Phi[:, k_fixed_ind]
+        Psi_k_fixed = self.Psi[:, k_fixed_ind]
 
         for a_ind, a in enumerate(self.a_s):
 
-            I_k_fixed[a_ind] = self.I_etak(a_ind, k_fixed_ind, self.Phi, G, rs)
+            I_k_fixed[a_ind] = self.I_etak(a_ind, k_fixed_ind, self.Phi, G)
 
-        out1 = np.zeros(self.n_as)
-        out2 = np.zeros(self.n_as)
+        theta_naught_hat = np.zeros(self.n_as)
 
-        theta_hat_naught_k_fixed = 0.43*self.Phi_bar_ak(self.a_s[0], k_fixed)
+        theta_hat_naught_k_fixed = 0.43*self.Phi_ak(self.a_s[0], k_fixed)
 
+        int_term = np.zeros(self.n_as)
         for a_ind, a in enumerate(self.a_s):
-            out1[a_ind] = (np.cos(k_fixed*rs[a_ind]) + self.J_ak(0, k_fixed)*np.sin(k_fixed*rs[a_ind]))*(theta_hat_naught_k_fixed+self.Phi_ak(self.a_s[0], k_fixed)) + I_k_fixed[a_ind]
-            out2[a_ind] = out1[a_ind] * (1+self.R_a(a))**(-0.25)
 
-            out2[a_ind] -= self.Phi[a_ind, k_fixed_ind]
+            integrand = Phi_k_fixed[:a_ind + 1] - Psi_k_fixed[:a_ind + 1]
+            integrand *= np.cos(k_fixed*self.rs_a(self.a_s[a_ind]) - k_fixed*self.rs_a(self.a_s[:a_ind + 1]))
+            
+            int_term[a_ind] = simpson(integrand, self.etas[:a_ind + 1])
         
-        return out2
+
+        for a_ind, a in enumerate(self.a_s):
+            theta_naught_hat[a_ind] = (theta_hat_naught_k_fixed + self.Phi_ak(self.a_s[0], k_fixed))*(np.cos(k_fixed*self.rs_a(a)) + np.sin(k_fixed*self.rs_a(a))*self.J_ak(self.a_s[0], k_fixed))
+            theta_naught_hat[a_ind] += I_k_fixed[a_ind]
+
+            theta_naught_hat[a_ind] -= self.Phi[a_ind, k_fixed_ind]
+
+            theta_naught_hat[a_ind] *= (1+self.R_a(self.a_s[a_ind]))**-0.25
+        
+        return theta_naught_hat
 
 
         
@@ -397,9 +428,6 @@ class analytic_CMB:
 
         
     
-
-
-
 
 
 
