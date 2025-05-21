@@ -209,14 +209,7 @@ class TheoCamb:
         #Theta_0_right2 = 
         #return 
 
-
-
-
-
-
-
-
-        
+    #def
 
 
 
