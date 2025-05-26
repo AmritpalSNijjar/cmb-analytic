@@ -95,7 +95,7 @@ class analytic_CMB:
         #           |-----n_ks//4-----||--------3*n_ks//4-------| (n_ks//4 arbitrarily chosen as the cutoff)
         #           |-------------------n_ks--------------------|
 
-        self.n_as = 4*self.n_as//4
+        self.n_ks = 4*self.n_ks//4
 
         # n_ks//4 values of scale factor upto k_matching
         ks_1 = self.get_ks(k_lower = self.k_lower, 
@@ -490,13 +490,13 @@ class analytic_CMB:
 
             if k_ind < self.k_matching_ind:
                 # k < 0.08*h^3
-                theta_0_hat_small_k_integral = self.theta_0_hat_small_k_integral_term(
+                theta_0_hat_small_k_integral[k_ind] = self.theta_0_hat_small_k_integral_term(
                     eta_ind = self.recomb_ind, 
                     k_ind = k_ind, 
                     Phi = self.Phi, 
                     Psi = self.Psi)
                 
-                theta_1_hat_small_k_integral = self.theta_1_hat_small_k_integral_term(
+                theta_1_hat_small_k_integral[k_ind] = self.theta_1_hat_small_k_integral_term(
                     eta_ind = self.recomb_ind, 
                     k_ind = k_ind, 
                     Phi = self.Phi, 
@@ -504,7 +504,7 @@ class analytic_CMB:
 
             else:
                 k_ind_large = k_ind - self.k_matching_ind - 1
-                # k > 0.08*h^3
+                # k >= 0.08*h^3
                 I_eta_star[k_ind_large] = self.I_etak(
                     eta_ind = self.recomb_ind, 
                     k_ind = k_ind, 
