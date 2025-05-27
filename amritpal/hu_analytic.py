@@ -50,10 +50,16 @@ class analytic_CMB:
         self.n_as    = int(2e3)      # Number of scale factor values.
         self.a_lower = 1e-6          # Lower limit of scale factor.
         self.a_upper = 1             # Upper limit of scale factor.
+
+        self.n_before_recomb_as = 1000
+        self.n_after_recomb_as  = self.n_as - self.n_before_recomb_as
         
         self.n_ks    = int(1e3)      # Number of k mode values.
         self.k_lower = 1e-3          # Lower limit of k mode.
         self.k_upper = 1             # Upper limit of k mode.
+
+        self.n_small_ks = 250
+        self.n_large_ks = self.n_ks - self.n_small_ks
 
         # Scale factor for recombination.
         
@@ -66,50 +72,47 @@ class analytic_CMB:
         # https://arxiv.org/abs/astro-ph/9407093: in the second paragraph following Equation (8) 
         self.k_matching = 0.08*self.h**3
 
-        # self.a_s = [a_lower, ..., a*, ..., a_upper]
+        # self.a_s = [a_lower, ...........,   a*,  ............, a_upper]
         #
-        #            |---n_as//2---||----n_as//2----|  (n_as//2 arbitrarily chosen as the cutoff)
-        #            |-------------n_as-------------|
+        #            |---n_before_recomb_as---||----n_after_recomb_as----|
+        #            |-----------------------n_as------------------------|
                          
-        self.n_as = 2*self.n_as//2
         
-        # n_as//2 values of scale factor upto a*
+        # self.n_before_recomb_as number of values of scale factor upto a*
         as_1   = self.get_scales(a_lower = self.a_lower, 
                                  a_upper = self.a_star, 
-                                 n_as = self.n_as//2, 
+                                 n_as = self.n_before_recomb_as, 
                                  point_spacing = "log", 
                                  endpoint = False)
         
-        self.recomb_ind = self.n_as//2
+        self.recomb_ind = self.n_before_recomb_as
         
-        # n_as//2 values of scale factor from a* upto a_upper
+        # self.n_after_recomb_as number of values of scale factor from a* upto a_upper
         as_2   = self.get_scales(a_lower = self.a_star, 
                                  a_upper = self.a_upper,
-                                 n_as = self.n_as//2, 
+                                 n_as = self.n_after_recomb_as, 
                                  point_spacing = "log")
         
         self.a_s = np.concatenate((as_1, as_2))
 
-        # self.ks = [k_lower, ..., k_matching, ..., ..., k_upper]
+        # self.ks = [k_lower, .........,  k_matching, ........., k_upper]
         #
-        #           |-----n_ks//4-----||--------3*n_ks//4-------| (n_ks//4 arbitrarily chosen as the cutoff)
-        #           |-------------------n_ks--------------------|
+        #           |-------n_small_ks-------||--------n_large_ks-------|
+        #           |-----------------------n_ks------------------------|
 
-        self.n_ks = 4*self.n_ks//4
-
-        # n_ks//4 values of scale factor upto k_matching
+        # self.n_small_ks number of values of scale factor upto k_matching
         ks_1 = self.get_ks(k_lower = self.k_lower, 
                            k_upper = self.k_matching, 
-                           n_ks = self.n_ks//4, 
+                           n_ks = self.n_small_ks, 
                            point_spacing = "log", 
                            endpoint = False)
 
-        self.k_matching_ind = self.n_ks//4
+        self.k_matching_ind = self.n_small_ks
         
-        # 3*n_ks//4 values of scale factor from k_matching upto k_upper
+        # self.n_large_ks number of values of scale factor from k_matching upto k_upper
         ks_2 = self.get_ks(k_lower = self.k_matching, 
                            k_upper = self.k_upper, 
-                           n_ks = 3*self.n_ks//4, 
+                           n_ks = self.n_large_ks, 
                            point_spacing = "log")
         
         self.ks   = np.concatenate((ks_1, ks_2))
@@ -363,14 +366,14 @@ class analytic_CMB:
         
         return val
 
-    def I_etak(self, eta_ind, k_ind, Phi, G):
+    def I_etak(self, eta_ind, k_ind, Phi, G, rs):
         """
         Equation (D-3) in https://arxiv.org/abs/astro-ph/9407093
         """
 
         k = self.ks[k_ind]
         
-        integrand = Phi[:eta_ind + 1, k_ind]*G[:eta_ind + 1, k_ind]*np.sin(k*self.rs_a(self.a_s[eta_ind]) - k*self.rs_a(self.a_s[:eta_ind + 1]))
+        integrand = Phi[:eta_ind + 1, k_ind]*G[:eta_ind + 1, k_ind]*np.sin(k*rs[eta_ind] - k*rs[:eta_ind + 1])
         
         integral_term = simpson(integrand, self.etas[:eta_ind + 1])
         
@@ -378,14 +381,14 @@ class analytic_CMB:
 
         return factor*integral_term
 
-    def theta_1_hat_large_k_integral_term(self, eta_ind, k_ind, Phi, G):
+    def theta_1_hat_large_k_integral_term(self, eta_ind, k_ind, Phi, G, rs):
         """
         Integral term appearing in Equation (D-5) in https://arxiv.org/abs/astro-ph/9407093
         """
 
         k = self.ks[k_ind]        
         
-        integrand = Phi[:eta_ind + 1, k_ind]*G[:eta_ind + 1, k_ind]*np.cos(k*self.rs_a(self.a_s[eta_ind]) - k*self.rs_a(self.a_s[:eta_ind + 1]))
+        integrand = Phi[:eta_ind + 1, k_ind]*G[:eta_ind + 1, k_ind]*np.cos(k*rs[eta_ind] - k*rs[:eta_ind + 1])
 
         integral_term = simpson(integrand, self.etas[:eta_ind + 1])
         
@@ -393,14 +396,14 @@ class analytic_CMB:
 
         return factor*integral_term
 
-    def theta_0_hat_small_k_integral_term(self, eta_ind, k_ind, Phi, Psi):
+    def theta_0_hat_small_k_integral_term(self, eta_ind, k_ind, Phi, Psi, rs):
         """
         Integral term appearing in Equation (D-6) in https://arxiv.org/abs/astro-ph/9407093
         """
 
         k = self.ks[k_ind]        
         
-        integrand = (Phi[:eta_ind + 1, k_ind] - Psi[:eta_ind + 1, k_ind])*np.sin(k*self.rs_a(self.a_s[eta_ind]) - k*self.rs_a(self.a_s[:eta_ind + 1]))
+        integrand = (Phi[:eta_ind + 1, k_ind] - Psi[:eta_ind + 1, k_ind])*np.sin(k*rs[eta_ind] - k*rs[:eta_ind + 1])
 
         integral_term = simpson(integrand, self.etas[:eta_ind + 1])
         
@@ -408,14 +411,14 @@ class analytic_CMB:
 
         return factor*integral_term
 
-    def theta_1_hat_small_k_integral_term(self, eta_ind, k_ind, Phi, Psi):
+    def theta_1_hat_small_k_integral_term(self, eta_ind, k_ind, Phi, Psi, rs):
         """
         Integral term appearing in Equation (D-6) in https://arxiv.org/abs/astro-ph/9407093
         """
 
         k = self.ks[k_ind]        
         
-        integrand = (Phi[:eta_ind + 1, k_ind] - Psi[:eta_ind + 1, k_ind])*np.cos(k*self.rs_a(self.a_s[eta_ind]) - k*self.rs_a(self.a_s[:eta_ind + 1]))
+        integrand = (Phi[:eta_ind + 1, k_ind] - Psi[:eta_ind + 1, k_ind])*np.cos(k*rs[eta_ind] - k*rs[:eta_ind + 1])
 
         integral_term = simpson(integrand, self.etas[:eta_ind + 1])
         
@@ -467,24 +470,27 @@ class analytic_CMB:
         # Double check if cs is even needed/used anywhere? It might not be.
         
         cs = self.cs_a(self.a_s)
-        rs = self.rs_a(self.a_s)
+        self.rs = self.rs_a(self.a_s)
         
         cs[0] = np.sqrt(1/3)
-        rs[0] = 0
+        self.rs[0] = 0
 
         #####################################################################
         ###### Construct Monopole and Dipole Solutions at Recombination #####
         #####################################################################
 
-        I_eta_star = np.zeros(3*self.n_ks//4)
+        # Step 1. Compute all the integrals appearing in Eqns. D-1, D-5, D-6, and D-7
+        #         Construct integrals as arrays for each value of k-mode
+
+        I_eta_star = np.zeros(self.n_large_ks)
         
         J_eta_star = self.J_ak(self.a_star, self.ks)
         J_0 = self.J_ak(self.a_s[0], self.ks)
 
-        theta_1_hat_large_k_integral = np.zeros(3*self.n_ks//4)
+        theta_1_hat_large_k_integral = np.zeros(self.n_large_ks)
         
-        theta_0_hat_small_k_integral = np.zeros(self.n_ks//4)
-        theta_1_hat_small_k_integral = np.zeros(self.n_ks//4) # See Lines 93-113 for where n_ks//4 comes from.
+        theta_0_hat_small_k_integral = np.zeros(self.n_small_ks)
+        theta_1_hat_small_k_integral = np.zeros(self.n_small_ks)
 
         for k_ind, k in enumerate(self.ks):
 
@@ -492,33 +498,37 @@ class analytic_CMB:
                 # k < 0.08*h^3
                 theta_0_hat_small_k_integral[k_ind] = self.theta_0_hat_small_k_integral_term(
                     eta_ind = self.recomb_ind, 
-                    k_ind = k_ind, 
-                    Phi = self.Phi, 
-                    Psi = self.Psi)
+                    k_ind   = k_ind, 
+                    Phi     = self.Phi, 
+                    Psi     = self.Psi,
+                    rs      = self.rs)
                 
                 theta_1_hat_small_k_integral[k_ind] = self.theta_1_hat_small_k_integral_term(
                     eta_ind = self.recomb_ind, 
-                    k_ind = k_ind, 
-                    Phi = self.Phi, 
-                    Psi = self.Psi)
+                    k_ind   = k_ind, 
+                    Phi     = self.Phi, 
+                    Psi     = self.Psi,
+                    rs      = self.rs)
 
             else:
                 k_ind_large = k_ind - self.k_matching_ind - 1
                 # k >= 0.08*h^3
                 I_eta_star[k_ind_large] = self.I_etak(
                     eta_ind = self.recomb_ind, 
-                    k_ind = k_ind, 
-                    Phi = self.Phi, 
-                    G = G)
+                    k_ind   = k_ind, 
+                    Phi     = self.Phi, 
+                    G       = G,
+                    rs      = self.rs)
                 
                 theta_1_hat_large_k_integral[k_ind_large] = self.theta_1_hat_large_k_integral_term(
                     eta_ind = self.recomb_ind, 
-                    k_ind = k_ind, 
-                    Phi = self.Phi, 
-                    G = G)
-
-
-        # Monopole and Dipole Moments at recombination , for large and small scales, as given by D-1, D-5, D-6, and D-7.
+                    k_ind   = k_ind, 
+                    Phi     = self.Phi, 
+                    G       = G,
+                    rs      = self.rs)
+        
+        
+        # Monopole and Dipole Moments at recombination , for large and small scales, as given by Eqns. D-1, D-5, D-6, and D-7.
         
         # ^Θ0(η*) as appears in Equation (D-1) in https://arxiv.org/abs/astro-ph/9407093
         # FOR SMALL SCALES (LARGE K) ===> all k indices are indexed [self.k_matching_ind:]
